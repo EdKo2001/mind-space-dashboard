@@ -1066,3 +1066,28 @@ dialog .primary {
     width: 100%;
   }
 }
+.metric-trend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.metric-trend.positive {
+  color: var(--green);
+}
+.metric-trend.negative {
+  color: var(--rose);
+}
+.metric-trend.neutral {
+  color: var(--muted);
+}
+.metric-comparison {
+  display: block;
+  margin-top: 5px;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--subtle);
+}

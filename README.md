@@ -35,3 +35,7 @@ Brand mark derives from the existing MindSpace supplied app artwork; no generate
 Today is calendar midnight to the mock snapshot in the selected timezone, not a rolling 24-hour window. Last 7/30/90/360 days include today plus the preceding calendar dates. Changing timezone recomputes query boundaries as well as labels. Custom start/end dates are inclusive; historical end dates query up to the following midnight (exclusive), while today is capped at the snapshot. The fixture clock is fixed and visibly labeled; no live clock is implied. Long custom ranges sample at most 366 points to keep chart rendering bounded.
 
 `npm test` verifies calendar-day boundaries, DST, UTC/Chicago date rollover and invalid custom inputs. The mock adapter receives the resolved range query; a future backend should consume the same UTC start/end boundaries.
+
+## Metric comparisons
+
+Top metric cards show literal up/down arrows plus calculated changes from synthetic baselines in the mock adapter. Green means an improvement for the metric; red means deterioration. Higher session volume/peak is shown green; lower reconnects, latency, failures, and spend is green. Failure-rate changes use percentage points. Live gauges compare with a sample snapshot 15 minutes earlier; reporting metrics compare with the previous range at matched elapsed time. No change and missing baselines remain neutral; zero baselines show new activity without dividing by zero. Comparisons are mock data, not measured results.

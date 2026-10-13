@@ -20,3 +20,9 @@ Not verified: production deployment, actual services/data, authentication, PostH
 Added Last 30/90/360 days and Custom range. Today now resolves selected-timezone midnight → sample snapshot; presets count inclusive calendar dates. Custom form Apply/Cancel retains committed selection, rejects reversed/invalid/future dates, and uses inclusive end dates. Date-specific Chicago offsets correctly yield 23/25-hour DST days. Mock fetching and charts receive actual query boundaries; long-range ticks and endpoints include years when needed. Current-session cards remain the current snapshot independently of historical aggregates.
 
 `npm run check`, `npm test` (4 cases), and `npm run build` PASS. Browser verified all new presets, custom reversed-date error, Oct1–3 Apply, Cancel retention, Chicago Today00:00–23:45 and UTC Today00:00–04:45. Responsive custom form and updated screenshot evidence: date-range-desktop.jpg, date-range-mobile.jpg. No real fetching or analytics integration.
+
+## October 13 metric comparison indicators
+
+Added reusable direction/change calculation, vector up/down/minus icons, metric-specific green/red colors and comparison labels to all six KPI cards. Values derive from typed mock baselines rather than hardcoded percentage strings. Zero/missing baselines and unchanged values remain explicit/neutral; failure-rate changes use percentage points. Today comparisons use yesterday at the same elapsed time; historical/custom ranges use matched prior ranges. Current gauges use a snapshot15minutes earlier.
+
+Typecheck/lint, six unit tests and static build PASS. Browser inspected actual desktop colors/directions, normal/empty comparison text, and375px layout without document overflow. Screenshots: metric-trends-desktop.jpg and metric-trends-mobile.jpg. All metrics/comparisons remain synthetic; no live backend/analytics changed.

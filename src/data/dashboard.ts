@@ -11,7 +11,16 @@ export type Session = {
   latency: number;
   startedAt: string;
 };
+export type MetricKey =
+  | "connected"
+  | "reconnecting"
+  | "peak"
+  | "voiceP95"
+  | "failedPercent"
+  | "spend";
+export type Comparison = { previous: number | null; label: string };
 export type Dashboard = {
+  comparisons: Record<MetricKey, Comparison>;
   source: "mock";
   capturedAt: string;
   range: DateRange;
@@ -114,6 +123,46 @@ function snapshot(query: RangeQuery, empty: boolean): Dashboard {
   const peak = Math.max(...concurrency.map((sample) => sample.count));
   const dayEquivalent = (end - start) / 86400000;
   return {
+    comparisons: {
+      connected: {
+        previous: empty ? 0 : 114,
+        label: "vs snapshot 15 min earlier",
+      },
+      reconnecting: {
+        previous: empty ? 0 : 5,
+        label: "vs snapshot 15 min earlier",
+      },
+      peak: {
+        previous: empty ? 0 : Math.round(peak / 1.06),
+        label:
+          query.period === "today"
+            ? "vs yesterday at the same time"
+            : "vs previous range · matched time",
+      },
+      voiceP95: {
+        previous: empty ? null : 3.4,
+        label:
+          query.period === "today"
+            ? "vs yesterday at the same time"
+            : "vs previous range · matched time",
+      },
+      failedPercent: {
+        previous: empty ? null : 1.1,
+        label:
+          query.period === "today"
+            ? "vs yesterday at the same time"
+            : "vs previous range · matched time",
+      },
+      spend: {
+        previous: empty
+          ? 0
+          : Number(((86.4 * dayEquivalent) / 1.12).toFixed(2)),
+        label:
+          query.period === "today"
+            ? "vs yesterday at the same time"
+            : "vs previous range · matched time",
+      },
+    },
     source: "mock",
     capturedAt: FIXTURE_NOW,
     range,

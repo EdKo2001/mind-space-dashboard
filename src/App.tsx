@@ -13,6 +13,8 @@ import {
   resolveDateRange,
 } from "./data/date-range";
 import type { Period } from "./data/date-range";
+import { metricTrend } from "./data/trend";
+import type { Comparison } from "./data/dashboard";
 import "./App.css";
 const money = (value: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
@@ -51,13 +53,22 @@ function Metric({
   icon,
   detail,
   tone = "",
+  comparison,
+  current,
+  higherIsBetter = true,
+  unit = "percent",
 }: {
   label: string;
   value: string;
   icon: IconName;
   detail: string;
   tone?: string;
+  comparison: Comparison;
+  current: number | null;
+  higherIsBetter?: boolean;
+  unit?: "percent" | "points";
 }) {
+  const trend = metricTrend(current, comparison.previous, higherIsBetter, unit);
   return (
     <div className={`metric ${tone}`}>
       <div className="metric-label">
@@ -66,6 +77,21 @@ function Metric({
       </div>
       <strong>{value}</strong>
       <span className="metric-detail">{detail}</span>
+      <div className={`metric-trend ${trend.tone}`}>
+        <Icon
+          name={trend.direction === "flat" ? "minus" : trend.direction}
+          size={15}
+        />
+        <span className="sr-only">
+          {trend.direction === "up"
+            ? "Increase"
+            : trend.direction === "down"
+              ? "Decrease"
+              : ""}{" "}
+        </span>
+        <span>{trend.text}</span>
+      </div>
+      <span className="metric-comparison">{comparison.label}</span>
     </div>
   );
 }
@@ -338,12 +364,20 @@ export default function App() {
             <div className="metrics">
               <Metric
                 label="Connected sessions"
+                comparison={data.comparisons.connected}
+                current={data.connected}
+                higherIsBetter={true}
+                unit="percent"
                 value={number(data.connected)}
                 icon="users"
                 detail="Current sample snapshot"
               />
               <Metric
                 label="Reconnecting"
+                comparison={data.comparisons.reconnecting}
+                current={data.reconnecting}
+                higherIsBetter={false}
+                unit="percent"
                 value={number(data.reconnecting)}
                 icon="refresh"
                 detail="Included in open sessions"
@@ -351,6 +385,10 @@ export default function App() {
               />
               <Metric
                 label="Peak concurrency"
+                comparison={data.comparisons.peak}
+                current={data.peak}
+                higherIsBetter={true}
+                unit="percent"
                 value={number(data.peak)}
                 icon="chart"
                 detail={
@@ -361,12 +399,20 @@ export default function App() {
               />
               <Metric
                 label="Voice response p95"
+                comparison={data.comparisons.voiceP95}
+                current={empty ? null : data.voiceP95}
+                higherIsBetter={false}
+                unit="percent"
                 value={empty ? "—" : `${data.voiceP95.toFixed(1)}s`}
                 icon="clock"
                 detail="Speech end → audible reply"
               />
               <Metric
                 label="Failed requests"
+                comparison={data.comparisons.failedPercent}
+                current={empty ? null : data.failedPercent}
+                higherIsBetter={false}
+                unit="points"
                 value={empty ? "—" : `${data.failedPercent.toFixed(1)}%`}
                 icon="warning"
                 detail={`${rangeLabel} · excludes interruptions`}
@@ -374,6 +420,10 @@ export default function App() {
               />
               <Metric
                 label="AI spend"
+                comparison={data.comparisons.spend}
+                current={data.spend}
+                higherIsBetter={false}
+                unit="percent"
                 value={money(data.spend)}
                 icon="money"
                 detail={`${rangeLabel} · estimated USD`}
