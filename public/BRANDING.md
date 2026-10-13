@@ -1,0 +1,1 @@
+Brand mark copied from MindSpace assets/branding/app-icon.svg, derived from the user's supplied Penpot Brand / Mark. The icon's background rectangle was removed for the dark dashboard. Original app asset remains unchanged. No external fonts or analytics scripts are loaded.
