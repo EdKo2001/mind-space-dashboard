@@ -5,10 +5,12 @@ export function Modal({
   title,
   children,
   onClose,
+  eyebrow = "INTEGRATION NOT CONNECTED",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  eyebrow?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -27,7 +29,7 @@ export function Modal({
     >
       <div className="modal-header">
         <div>
-          <span className="eyebrow">SAMPLE DATA · NO BACKEND CONNECTED</span>
+          <span className="eyebrow">{eyebrow}</span>
           <h2 id="dialog-title">{title}</h2>
         </div>
         <button

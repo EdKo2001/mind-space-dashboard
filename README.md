@@ -48,3 +48,9 @@ See [API_CONTRACT.md](API_CONTRACT.md). Configure a public endpoint with `VITE_D
 Nullable measurements/collections render unavailable, separately from measured zero/empty. Health, alerts, forecasts and comparisons come from the adapter instead of static UI copy. Mock preview controls include slow loading, partial data, large chart values/gaps and failed refresh. Charts dynamically scale, use timestamp spacing and retain explicit gaps; empty/single-point and large-series cases are covered.
 
 Run `npm test` for HTTP, response validation, timeout/cancellation, chart and date/trend tests. `tests/api-fixture.mjs` is a local synthetic QA service, not production.
+
+## PostgreSQL demo preview
+
+The user authorized a database-backed synthetic test. In the standalone backend checkout run `docker compose up --build -d`, then `docker compose exec -T api node dist/dashboard/seed-demo.js`. Here run `npm run dev:db-demo` and open http://127.0.0.1:5175. This sends actual HTTP requests to http://127.0.0.1:3001/v1/dashboard/demo. It does not require `.env` changes; ordinary `npm run dev` stays in local fixture mode.
+
+The DB DEMO badge and notice explicitly label synthetic session metrics. The API's `synthetic:true` marker is retained by the parser as source `db-demo`, including when configured through a custom API URL. The demo schema contains66 synthetic records and721 samples;6 current session rows are static fixtures. Refresh reads PostgreSQL again; reporting periods filter SQL aggregates/history. Real AI/voice remain unavailable. No customer content, credentials or provider connections are added.

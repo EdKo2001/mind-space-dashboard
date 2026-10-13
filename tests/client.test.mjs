@@ -133,3 +133,9 @@ test("Backend unavailable reasons are allowlisted; lifecycle diagnostics never b
     /366/,
   );
 });
+
+test("Database demo responses keep the synthetic marker instead of appearing as live metrics", () => {
+  const parsed = parseDashboard({ ...payload(), synthetic: true, profile: "db-demo-v1" }, query, FIXTURE_NOW);
+  assert.equal(parsed.source, "db-demo");
+  assert.equal(parseDashboard(payload(), query, FIXTURE_NOW).source, "api");
+});

@@ -123,7 +123,7 @@ export function parseDashboard(
     throw new Error("Invalid failed-request percentage.");
   return {
     ...fields,
-    source: "api",
+    source: raw.synthetic === true ? "db-demo" : "api",
     unavailable: Object.fromEntries(
       Object.entries(raw.unavailable == null ? {} : record(raw.unavailable))
         .filter(([key]) =>

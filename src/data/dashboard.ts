@@ -22,7 +22,7 @@ export type MetricKey =
 export type Comparison = { previous: number | null; label: string };
 export type Dashboard = {
   comparisons: Record<MetricKey, Comparison>;
-  source: "mock" | "api";
+  source: "mock" | "api" | "db-demo";
   unavailable: Record<string, string>;
   health:
     | {

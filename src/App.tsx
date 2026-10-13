@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode, FormEvent } from "react";
 import { loadDashboard } from "./data/client";
-import { API_ENDPOINT } from "./data/config";
+import { API_ENDPOINT, DB_DEMO_MODE } from "./data/config";
 import type { Dashboard, Scenario } from "./data/dashboard";
 import { Icon } from "./components/Icon";
 import type { IconName } from "./components/Icon";
@@ -261,7 +261,7 @@ export default function App() {
         <div className="header-actions">
           <span className="demo-badge">
             <span className="dot" />
-            {API_ENDPOINT ? "API MODE" : "MOCK DATA"}
+            {DB_DEMO_MODE || data?.source === "db-demo" ? "DB DEMO" : API_ENDPOINT ? "API MODE" : "MOCK DATA"}
           </span>
           <button
             className="button posthog-button"
@@ -365,7 +365,9 @@ export default function App() {
         <div className="sample-notice" role="status" aria-live="polite">
           <span>
             <span className="dot" />
-            {API_ENDPOINT
+            {DB_DEMO_MODE || data?.source === "db-demo"
+              ? "PostgreSQL demo · all session metrics are synthetic · fetched through the API."
+              : API_ENDPOINT
               ? "API mode · measurements supplied by the configured endpoint."
               : "Mock mode · all sessions and metrics are synthetic."}
           </span>
@@ -378,7 +380,7 @@ export default function App() {
                 ? data
                   ? "Refresh failed · previous snapshot is stale"
                   : "Dashboard unavailable"
-                : `${data?.source === "api" ? "Snapshot" : "Fixture"} · ${new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric", year: "numeric" }).format(new Date(data?.capturedAt ?? "2026-10-14T04:45:00Z"))}`}
+                : `${data?.source !== "mock" ? "Snapshot" : "Fixture"} · ${new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric", year: "numeric" }).format(new Date(data?.capturedAt ?? "2026-10-14T04:45:00Z"))}`}
             {data && !loading && !error
               ? ` · ${time(data.capturedAt)} ${timezone === "UTC" ? "UTC" : "CT"}`
               : ""}
@@ -615,7 +617,9 @@ export default function App() {
                 <p className="health-note">
                   {data.source === "mock"
                     ? "Illustrative statuses · no services are connected."
-                    : "Service status from the latest API snapshot."}
+                    : data.source === "db-demo"
+                      ? "API and PostgreSQL are connected. AI and voice remain unavailable; session metrics are synthetic."
+                      : "Service status from the latest API snapshot."}
                 </p>
               </Panel>
             </div>
@@ -832,7 +836,7 @@ export default function App() {
                     <p>
                       {data.forecast === null
                         ? "No forecast supplied."
-                        : data.source === "mock"
+                        : data.source !== "api"
                           ? "Illustrative daily run rate × 30 days."
                           : "Estimate supplied by the API."}
                     </p>
@@ -913,7 +917,8 @@ export default function App() {
         </footer>
       </main>
       {selected && (
-        <Modal title={selected.id} onClose={() => setSelectedId(null)}>
+        <Modal title={selected.id} onClose={() => setSelectedId(null)}
+          eyebrow={data?.source === "db-demo" ? "POSTGRESQL DEMO · SYNTHETIC SESSION" : data?.source === "api" ? "API SESSION METADATA" : "SAMPLE DATA · NO BACKEND CONNECTED"}>
           <div className="detail-grid">
             {[
               [
@@ -929,7 +934,7 @@ export default function App() {
                 `${(selected.type === "paid" ? 45 : 10) - selected.remaining} minutes`,
               ],
               ["Completed answers", String(selected.answers)],
-              ["Voice p95", `${selected.latency}s`],
+              ["Voice p95", `${number(selected.latency)}s`],
               ["Platform", selected.platform],
               ["Started", `${time(selected.startedAt)} · ${timezone}`],
             ].map(([label, value]) => (
