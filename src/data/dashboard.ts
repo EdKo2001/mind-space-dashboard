@@ -1,6 +1,7 @@
 import { FIXTURE_NOW, resolveDateRange } from "./date-range.ts";
 import type { DateRange, RangeQuery } from "./date-range.ts";
-export type Scenario = "normal" | "empty" | "error";
+export type Scenario =
+  "normal" | "empty" | "error" | "slow" | "partial" | "large" | "refresh-error";
 export type Session = {
   id: string;
   type: "paid" | "trial";
@@ -21,25 +22,34 @@ export type MetricKey =
 export type Comparison = { previous: number | null; label: string };
 export type Dashboard = {
   comparisons: Record<MetricKey, Comparison>;
-  source: "mock";
+  source: "mock" | "api";
+  unavailable: Record<string, string>;
+  health:
+    | {
+        name: string;
+        status: "Operational" | "Degraded" | "Delayed" | "Unknown";
+      }[]
+    | null;
+  alerts: { title: string; detail: string }[] | null;
+  forecast: number | null;
   capturedAt: string;
   range: DateRange;
   granularity: "intraday" | "daily";
-  connected: number;
-  reconnecting: number;
-  peak: number;
-  peakAt: string;
-  voiceP95: number;
-  failedPercent: number;
-  spend: number;
-  capacity: number;
-  completed: number;
-  avgAnswers: number;
-  avgDuration: number;
-  queueDepth: number;
-  queueOldest: number;
-  concurrency: { at: string; count: number }[];
-  sessions: Session[];
+  connected: number | null;
+  reconnecting: number | null;
+  peak: number | null;
+  peakAt: string | null;
+  voiceP95: number | null;
+  failedPercent: number | null;
+  spend: number | null;
+  capacity: number | null;
+  completed: number | null;
+  avgAnswers: number | null;
+  avgDuration: number | null;
+  queueDepth: number | null;
+  queueOldest: number | null;
+  concurrency: { at: string; count: number | null }[] | null;
+  sessions: Session[] | null;
 };
 const sessions: Session[] = [
   {
@@ -103,7 +113,7 @@ const sessions: Session[] = [
     startedAt: "2026-10-14T04:20:00Z",
   },
 ];
-function snapshot(query: RangeQuery, empty: boolean): Dashboard {
+export function mockSnapshot(query: RangeQuery, empty: boolean): Dashboard {
   const range = resolveDateRange(query);
   const start = Date.parse(range.start),
     end = Date.parse(range.end);
@@ -163,6 +173,27 @@ function snapshot(query: RangeQuery, empty: boolean): Dashboard {
             : "vs previous range · matched time",
       },
     },
+    health: [
+      { name: "API gateway", status: "Operational" },
+      { name: "Voice service", status: "Operational" },
+      { name: "AI inference", status: "Degraded" },
+      { name: "Queue system", status: "Delayed" },
+    ],
+    alerts: empty
+      ? []
+      : [
+          {
+            title: "Inference latency elevated",
+            detail:
+              "Sample voice p95 is 2.8s against an illustrative 2.0s target.",
+          },
+          {
+            title: "A session has 1 minute left",
+            detail: "Sample remaining time is shown in the session table.",
+          },
+        ],
+    forecast: empty ? 0 : 2592,
+    unavailable: {},
     source: "mock",
     capturedAt: FIXTURE_NOW,
     range,
@@ -171,13 +202,13 @@ function snapshot(query: RangeQuery, empty: boolean): Dashboard {
     reconnecting: empty ? 0 : 8,
     peak,
     peakAt: concurrency.find((sample) => sample.count === peak)!.at,
-    voiceP95: empty ? 0 : 2.8,
-    failedPercent: empty ? 0 : 1.4,
+    voiceP95: empty ? null : 2.8,
+    failedPercent: empty ? null : 1.4,
     spend: empty ? 0 : Number((86.4 * dayEquivalent).toFixed(2)),
     capacity: 250,
     completed: empty ? 0 : Math.round(742 * dayEquivalent),
-    avgAnswers: empty ? 0 : 24,
-    avgDuration: empty ? 0 : 31,
+    avgAnswers: empty ? null : 24,
+    avgDuration: empty ? null : 31,
     queueDepth: empty ? 0 : 18,
     queueOldest: empty ? 0 : 8,
     concurrency,
@@ -200,18 +231,55 @@ export function fetchDashboard(
       clearTimeout(timer);
       reject(new DOMException("Aborted", "AbortError"));
     };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", abort);
-      if (scenario === "error")
-        reject(new Error("The mock request failed. No backend is connected."));
-      else {
-        try {
-          resolve(snapshot(query, scenario === "empty"));
-        } catch (error) {
-          reject(error);
+    const timer = setTimeout(
+      () => {
+        signal.removeEventListener("abort", abort);
+        if (scenario === "error" || scenario === "refresh-error")
+          reject(
+            new Error("The mock request failed. No backend is connected."),
+          );
+        else {
+          try {
+            const result = mockSnapshot(query, scenario === "empty");
+            if (scenario === "partial") {
+              result.voiceP95 = null;
+              result.spend = null;
+              result.peak = null;
+              result.peakAt = null;
+              result.capacity = null;
+              result.health = null;
+              result.alerts = null;
+              result.forecast = null;
+              result.sessions = null;
+              result.avgAnswers = null;
+              result.concurrency = null;
+            }
+            if (scenario === "large") {
+              result.connected = 1540;
+              result.capacity = 1800;
+              result.peak = 2300;
+              result.concurrency = [
+                { at: result.range.start, count: 450 },
+                {
+                  at: new Date(
+                    (Date.parse(result.range.start) +
+                      Date.parse(result.range.end)) /
+                      2,
+                  ).toISOString(),
+                  count: null,
+                },
+                { at: result.range.end, count: 2300 },
+              ];
+              result.peakAt = result.range.end;
+            }
+            resolve(result);
+          } catch (error) {
+            reject(error);
+          }
         }
-      }
-    }, 650);
+      },
+      scenario === "slow" ? 2500 : 650,
+    );
     signal.addEventListener("abort", abort, { once: true });
   });
 }

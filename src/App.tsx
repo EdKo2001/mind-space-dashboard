@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ReactNode, FormEvent } from "react";
-import { fetchDashboard } from "./data/dashboard";
-import type { Dashboard, Scenario, Session } from "./data/dashboard";
+import { loadDashboard } from "./data/client";
+import { API_ENDPOINT } from "./data/config";
+import type { Dashboard, Scenario } from "./data/dashboard";
 import { Icon } from "./components/Icon";
 import type { IconName } from "./components/Icon";
 import { ConcurrencyChart } from "./components/ConcurrencyChart";
@@ -16,11 +17,21 @@ import type { Period } from "./data/date-range";
 import { metricTrend } from "./data/trend";
 import type { Comparison } from "./data/dashboard";
 import "./App.css";
-const money = (value: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-    value,
-  );
-const number = (value: number) => new Intl.NumberFormat("en-US").format(value);
+const money = (value: number | null) =>
+  value === null
+    ? "—"
+    : new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        notation: value > 9999 ? "compact" : "standard",
+      }).format(value);
+const number = (value: number | null) =>
+  value === null
+    ? "—"
+    : new Intl.NumberFormat("en-US", {
+        notation: value > 9999 ? "compact" : "standard",
+        maximumFractionDigits: 1,
+      }).format(value);
 function Panel({
   title,
   icon,
@@ -54,6 +65,7 @@ function Metric({
   detail,
   tone = "",
   comparison,
+  reason,
   current,
   higherIsBetter = true,
   unit = "percent",
@@ -64,6 +76,7 @@ function Metric({
   detail: string;
   tone?: string;
   comparison: Comparison;
+  reason?: string;
   current: number | null;
   higherIsBetter?: boolean;
   unit?: "percent" | "points";
@@ -75,7 +88,15 @@ function Metric({
         <Icon name={icon} />
         <span>{label}</span>
       </div>
-      <strong>{value}</strong>
+      <strong
+        title={
+          current === null
+            ? (reason ?? "Unavailable")
+            : current.toLocaleString("en-US")
+        }
+      >
+        {value}
+      </strong>
       <span className="metric-detail">{detail}</span>
       <div className={`metric-trend ${trend.tone}`}>
         <Icon
@@ -119,17 +140,33 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All statuses");
-  const [selected, setSelected] = useState<Session | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    data?.sessions?.find((session) => session.id === selectedId) ?? null;
+  const [autoRefresh, setAutoRefresh] = useState(0);
   const [analytics, setAnalytics] = useState<string | null>(null);
   const [receivedAt, setReceivedAt] = useState<string | null>(null);
+  const [clock, setClock] = useState(() =>
+    API_ENDPOINT ? new Date().toISOString() : FIXTURE_NOW,
+  );
   useEffect(() => {
     const controller = new AbortController();
-    fetchDashboard({ period, timezone, ...custom }, scenario, controller.signal)
+    loadDashboard(
+      API_ENDPOINT,
+      { period, timezone, ...custom },
+      scenario,
+      controller.signal,
+    )
       .then((result) => {
+        if (controller.signal.aborted) return;
         setData(result);
+        setSelectedId((id) =>
+          result.sessions?.some((session) => session.id === id) ? id : null,
+        );
         setLoading(false);
         setError(null);
         setReceivedAt(new Date().toISOString());
+        if (API_ENDPOINT) setClock(new Date().toISOString());
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
@@ -147,6 +184,13 @@ export default function App() {
     setError(null);
     setRevision((value) => value + 1);
   };
+  useEffect(() => {
+    if (!autoRefresh || loading) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) reload();
+    }, autoRefresh * 1000);
+    return () => clearInterval(timer);
+  }, [autoRefresh, loading]);
   const changePeriod = (value: Period) => {
     if (value === "custom") {
       setEditingRange(true);
@@ -160,7 +204,7 @@ export default function App() {
     setPeriod(value);
   };
   const changeScenario = (value: Scenario) => {
-    setData(null);
+    if (value !== "refresh-error") setData(null);
     setLoading(true);
     setError(null);
     setScenario(value);
@@ -173,12 +217,11 @@ export default function App() {
       hour12: false,
     }).format(new Date(at));
   const sessions =
-    data?.sessions.filter(
+    data?.sessions?.filter(
       (session) =>
         (filter === "All statuses" || session.status === filter) &&
         session.id.toLowerCase().includes(search.toLowerCase()),
     ) ?? [];
-  const empty = data?.connected === 0 && data.completed === 0;
   const rangeLabel = data?.range.label ?? PERIODS[period];
   const applyCustom = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -188,7 +231,12 @@ export default function App() {
       endDate: String(form.get("endDate")),
     };
     try {
-      resolveDateRange({ period: "custom", timezone, ...dates });
+      const range = resolveDateRange(
+        { period: "custom", timezone, ...dates },
+        clock,
+      );
+      if (API_ENDPOINT && range.calendarDays > 366)
+        throw new Error("Choose 366 calendar days or fewer for this backend.");
     } catch (error) {
       setRangeError(error instanceof Error ? error.message : "Invalid range");
       return;
@@ -213,7 +261,7 @@ export default function App() {
         <div className="header-actions">
           <span className="demo-badge">
             <span className="dot" />
-            MOCK DATA
+            {API_ENDPOINT ? "API MODE" : "MOCK DATA"}
           </span>
           <button
             className="button posthog-button"
@@ -263,7 +311,7 @@ export default function App() {
             </label>
             <button
               className="icon-button"
-              aria-label="Refresh sample data"
+              aria-label="Refresh dashboard"
               disabled={loading}
               onClick={reload}
             >
@@ -278,7 +326,7 @@ export default function App() {
               <input
                 type="date"
                 required
-                max={dateInZone(FIXTURE_NOW, timezone)}
+                max={dateInZone(clock, timezone)}
                 name="startDate"
                 defaultValue={custom.startDate}
               />
@@ -288,7 +336,7 @@ export default function App() {
               <input
                 type="date"
                 required
-                max={dateInZone(FIXTURE_NOW, timezone)}
+                max={dateInZone(clock, timezone)}
                 name="endDate"
                 defaultValue={custom.endDate}
               />
@@ -304,8 +352,8 @@ export default function App() {
               Cancel
             </button>
             <p>
-              Inclusive calendar dates in {timezone}. Today ends at the sample
-              snapshot time.
+              Inclusive calendar dates in {timezone}. Today ends at the latest
+              request time.
             </p>
             {rangeError && (
               <p role="alert" className="rose">
@@ -314,17 +362,23 @@ export default function App() {
             )}
           </form>
         )}
-        <div className="sample-notice">
+        <div className="sample-notice" role="status" aria-live="polite">
           <span>
             <span className="dot" />
-            Static preview. All sessions and metrics are synthetic.
+            {API_ENDPOINT
+              ? "API mode · measurements supplied by the configured endpoint."
+              : "Mock mode · all sessions and metrics are synthetic."}
           </span>
           <span>
             {loading
-              ? "Fetching sample data…"
+              ? data
+                ? "Refreshing… previous snapshot remains visible"
+                : "Loading dashboard…"
               : error
-                ? "Mock fetch failed"
-                : `Fixture · ${new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric", year: "numeric" }).format(new Date(data?.capturedAt ?? "2026-10-14T04:45:00Z"))}`}
+                ? data
+                  ? "Refresh failed · previous snapshot is stale"
+                  : "Dashboard unavailable"
+                : `${data?.source === "api" ? "Snapshot" : "Fixture"} · ${new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric", year: "numeric" }).format(new Date(data?.capturedAt ?? "2026-10-14T04:45:00Z"))}`}
             {data && !loading && !error
               ? ` · ${time(data.capturedAt)} ${timezone === "UTC" ? "UTC" : "CT"}`
               : ""}
@@ -334,14 +388,14 @@ export default function App() {
           <div role="alert" className="error-state">
             <Icon name="warning" />
             <div>
-              <strong>Couldn’t fetch the sample dashboard</strong>
+              <strong>Couldn’t load the dashboard</strong>
               <p>
                 {error}
-                {data ? " Previous sample data is shown below." : ""}
+                {data ? " Previous data is shown below and marked stale." : ""}
               </p>
             </div>
             <button className="button" onClick={reload}>
-              Retry mock request
+              Retry request
             </button>
           </div>
         )}
@@ -352,29 +406,44 @@ export default function App() {
                 <div className="skeleton" key={i} />
               ))}
             </div>
-            <div className="skeleton skeleton-chart" />
-            <p>Loading sample operations…</p>
+            <div className="primary-grid">
+              <div className="skeleton skeleton-chart" />
+              <div className="skeleton skeleton-chart" />
+            </div>
+            <div className="secondary-grid">
+              <div className="skeleton skeleton-table" />
+              <div className="skeleton skeleton-table" />
+            </div>
+            <p>Loading operations…</p>
           </div>
         )}
         {data && (
           <div
-            className={loading ? "dashboard fetching" : "dashboard"}
+            className={
+              loading
+                ? "dashboard fetching"
+                : error
+                  ? "dashboard stale"
+                  : "dashboard"
+            }
             aria-busy={loading}
           >
             <div className="metrics">
               <Metric
                 label="Connected sessions"
                 comparison={data.comparisons.connected}
+                reason={data.unavailable.connected}
                 current={data.connected}
                 higherIsBetter={true}
                 unit="percent"
                 value={number(data.connected)}
                 icon="users"
-                detail="Current sample snapshot"
+                detail="Current snapshot"
               />
               <Metric
                 label="Reconnecting"
                 comparison={data.comparisons.reconnecting}
+                reason={data.unavailable.reconnecting}
                 current={data.reconnecting}
                 higherIsBetter={false}
                 unit="percent"
@@ -386,34 +455,43 @@ export default function App() {
               <Metric
                 label="Peak concurrency"
                 comparison={data.comparisons.peak}
+                reason={data.unavailable.peak}
                 current={data.peak}
                 higherIsBetter={true}
                 unit="percent"
                 value={number(data.peak)}
                 icon="chart"
                 detail={
-                  empty
-                    ? "No sessions in this fixture"
-                    : `${rangeLabel} · ${new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric" }).format(new Date(data.peakAt))} ${time(data.peakAt)}`
+                  data.peakAt === null
+                    ? "Peak time unavailable"
+                    : `${rangeLabel} · ${new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric" }).format(new Date(data.peakAt!))} ${time(data.peakAt)}`
                 }
               />
               <Metric
                 label="Voice response p95"
                 comparison={data.comparisons.voiceP95}
-                current={empty ? null : data.voiceP95}
+                reason={data.unavailable.voiceP95}
+                current={data.voiceP95}
                 higherIsBetter={false}
                 unit="percent"
-                value={empty ? "—" : `${data.voiceP95.toFixed(1)}s`}
+                value={
+                  data.voiceP95 === null ? "—" : `${data.voiceP95.toFixed(1)}s`
+                }
                 icon="clock"
                 detail="Speech end → audible reply"
               />
               <Metric
                 label="Failed requests"
                 comparison={data.comparisons.failedPercent}
-                current={empty ? null : data.failedPercent}
+                reason={data.unavailable.failedPercent}
+                current={data.failedPercent}
                 higherIsBetter={false}
                 unit="points"
-                value={empty ? "—" : `${data.failedPercent.toFixed(1)}%`}
+                value={
+                  data.failedPercent === null
+                    ? "—"
+                    : `${data.failedPercent.toFixed(1)}%`
+                }
                 icon="warning"
                 detail={`${rangeLabel} · excludes interruptions`}
                 tone="rose"
@@ -421,6 +499,7 @@ export default function App() {
               <Metric
                 label="AI spend"
                 comparison={data.comparisons.spend}
+                reason={data.unavailable.spend}
                 current={data.spend}
                 higherIsBetter={false}
                 unit="percent"
@@ -442,7 +521,7 @@ export default function App() {
                     <span>
                       connected now{" "}
                       <span className="subtle">
-                        / {data.capacity} sample capacity
+                        / {number(data.capacity)} capacity
                       </span>
                     </span>
                   </div>
@@ -493,44 +572,50 @@ export default function App() {
               <Panel
                 title="System health"
                 icon="server"
-                aside={<span className="pill amber">Sample degradation</span>}
+                aside={
+                  <span className="pill">
+                    {data.source === "mock"
+                      ? "Mock statuses"
+                      : "Reported statuses"}
+                  </span>
+                }
               >
                 <div className="health-rows">
-                  {(
-                    [
-                      ["API gateway", "Operational", "grid"],
-                      ["Voice service", "Operational", "sound"],
-                      ["AI inference", "Degraded", "activity"],
-                      ["Queue system", "Delayed", "server"],
-                    ] as const
-                  ).map(([name, status, icon]) => (
-                    <div className="health-row" key={name}>
+                  {data.health?.map((service, index) => (
+                    <div className="health-row" key={index}>
                       <span>
-                        <Icon name={icon} size={17} />
-                        {name}
+                        <Icon name="server" size={17} />
+                        {service.name}
                       </span>
-                      <Status status={status} />
+                      <Status status={service.status} />
                     </div>
                   ))}
                 </div>
+                {data.health === null && (
+                  <div className="empty-state compact">
+                    <strong>Service health unavailable</strong>
+                  </div>
+                )}
                 <div className="queue-stats">
                   <div>
                     <span>Queue depth</span>
                     <strong>
-                      {data.queueDepth}
+                      {number(data.queueDepth)}
                       <small> requests</small>
                     </strong>
                   </div>
                   <div>
                     <span>Oldest waiting</span>
                     <strong>
-                      {data.queueOldest}
+                      {number(data.queueOldest)}
                       <small> seconds</small>
                     </strong>
                   </div>
                 </div>
                 <p className="health-note">
-                  Illustrative statuses · no services are connected.
+                  {data.source === "mock"
+                    ? "Illustrative statuses · no services are connected."
+                    : "Service status from the latest API snapshot."}
                 </p>
               </Panel>
             </div>
@@ -541,8 +626,10 @@ export default function App() {
                   icon="users"
                   aside={
                     <span className="panel-caption">
-                      {data.connected + data.reconnecting} open ·{" "}
-                      {data.sessions.length} sample rows
+                      {data.connected === null || data.reconnecting === null
+                        ? "—"
+                        : number(data.connected + data.reconnecting)}{" "}
+                      open · {data.sessions?.length ?? "—"} loaded rows
                     </span>
                   }
                 >
@@ -588,7 +675,7 @@ export default function App() {
                             <td>
                               <button
                                 className="session-id"
-                                onClick={() => setSelected(session)}
+                                onClick={() => setSelectedId(session.id)}
                               >
                                 {session.id}
                               </button>
@@ -630,7 +717,7 @@ export default function App() {
                               <button
                                 className="icon-button row-action"
                                 aria-label={`View ${session.id}`}
-                                onClick={() => setSelected(session)}
+                                onClick={() => setSelectedId(session.id)}
                               >
                                 <Icon name="chevron" size={16} />
                               </button>
@@ -644,16 +731,20 @@ export default function App() {
                     <div className="empty-state">
                       <Icon name="users" size={26} />
                       <strong>
-                        {data.sessions.length
+                        {(data.sessions?.length ?? 0)
                           ? "No matching sessions"
-                          : "No active sample sessions"}
+                          : data.sessions === null
+                            ? "Session data unavailable"
+                            : "No session rows returned"}
                       </strong>
                       <p>
-                        {data.sessions.length
+                        {(data.sessions?.length ?? 0)
                           ? "Try another ID or status."
-                          : "This is the empty-state fixture."}
+                          : data.sessions === null
+                            ? "The source has not supplied session rows."
+                            : "No session rows were returned for this snapshot."}
                       </p>
-                      {data.sessions.length > 0 && (
+                      {(data.sessions?.length ?? 0) > 0 && (
                         <button
                           className="button"
                           onClick={() => {
@@ -668,10 +759,10 @@ export default function App() {
                   )}
                   <div className="table-footer">
                     <span>
-                      Showing {sessions.length} of {data.sessions.length}{" "}
-                      fixture rows
+                      Showing {sessions.length} of{" "}
+                      {data.sessions?.length ?? "—"} loaded rows
                     </span>
-                    <span>Read-only preview</span>
+                    <span>Read-only view</span>
                   </div>
                 </Panel>
                 <Panel
@@ -686,13 +777,13 @@ export default function App() {
                     </div>
                     <div>
                       <span>Average answers / session</span>
-                      <strong>{empty ? "—" : data.avgAnswers}</strong>
+                      <strong>{number(data.avgAnswers)}</strong>
                     </div>
                     <div>
                       <span>Average duration</span>
                       <strong>
-                        {empty ? "—" : data.avgDuration}
-                        <small>{empty ? "" : " min"}</small>
+                        {number(data.avgDuration)}
+                        <small>{data.avgDuration === null ? "" : " min"}</small>
                       </strong>
                     </div>
                   </div>
@@ -703,50 +794,48 @@ export default function App() {
                   title="Attention needed"
                   icon="warning"
                   aside={
-                    <span className="pill amber">
-                      {empty ? "No activity" : "2 sample alerts"}
+                    <span className="pill">
+                      {data.alerts === null
+                        ? "Unavailable"
+                        : `${data.alerts.length} alerts`}
                     </span>
                   }
                 >
-                  {empty ? (
-                    <div className="empty-state compact">
-                      <strong>No session alerts</strong>
-                      <p>No activity in this fixture.</p>
-                    </div>
-                  ) : (
-                    <div className="alert-rows">
+                  {data.alerts?.map((alert, index) => (
+                    <div className="alert-rows" key={index}>
                       <div className="alert-item">
                         <span className="alert-icon amber">
-                          <Icon name="activity" size={17} />
+                          <Icon name="warning" size={17} />
                         </span>
                         <div>
-                          <strong>Inference latency elevated</strong>
-                          <p>
-                            Voice p95 is 2.8s against an illustrative 2.0s
-                            target.
-                          </p>
-                          <span className="alert-label">PERFORMANCE</span>
+                          <strong>{alert.title}</strong>
+                          <p>{alert.detail}</p>
                         </div>
                       </div>
-                      <div className="alert-item">
-                        <span className="alert-icon rose">
-                          <Icon name="clock" size={17} />
-                        </span>
-                        <div>
-                          <strong>A session has 1 minute left</strong>
-                          <p>Remaining time is shown in the session table.</p>
-                          <span className="alert-label">SESSION LIMIT</span>
-                        </div>
-                      </div>
+                    </div>
+                  ))}
+                  {!data.alerts?.length && (
+                    <div className="empty-state compact">
+                      <strong>
+                        {data.alerts === null
+                          ? "Alert data unavailable"
+                          : "No reported alerts"}
+                      </strong>
                     </div>
                   )}
                   <div className="spend-forecast">
                     <span>Monthly AI spend forecast</span>
                     <strong>
-                      {money(empty ? 0 : 2592)}
+                      {money(data.forecast)}
                       <span>estimate</span>
                     </strong>
-                    <p>Illustrative daily run rate × 30 days.</p>
+                    <p>
+                      {data.forecast === null
+                        ? "No forecast supplied."
+                        : data.source === "mock"
+                          ? "Illustrative daily run rate × 30 days."
+                          : "Estimate supplied by the API."}
+                    </p>
                   </div>
                 </Panel>
                 <Panel
@@ -780,31 +869,51 @@ export default function App() {
         <footer>
           <div>
             <strong>MindSpace Operations</strong>
-            <span>Static preview · no tracking or saved session content</span>
+            <span>No session content stored by this dashboard</span>
           </div>
           <div className="preview-controls">
-            <label htmlFor="scenario">Preview state</label>
+            <label htmlFor="auto-refresh">Auto refresh</label>
             <select
-              id="scenario"
-              value={scenario}
-              onChange={(event) =>
-                changeScenario(event.target.value as Scenario)
-              }
+              id="auto-refresh"
+              value={autoRefresh}
+              onChange={(event) => setAutoRefresh(Number(event.target.value))}
             >
-              <option value="normal">Sample data</option>
-              <option value="empty">Empty</option>
-              <option value="error">Fetch error</option>
+              <option value={0}>Off</option>
+              <option value={15}>Every 15s</option>
+              <option value={60}>Every 60s</option>
             </select>
+            {!API_ENDPOINT && (
+              <>
+                <label htmlFor="scenario">Preview state</label>
+                <select
+                  id="scenario"
+                  value={scenario}
+                  onChange={(event) =>
+                    changeScenario(event.target.value as Scenario)
+                  }
+                >
+                  <option value="normal">Sample data</option>
+                  <option value="empty">Empty</option>
+                  <option value="error">Initial error</option>
+                  <option value="slow">Slow loading</option>
+                  <option value="partial">Partial data</option>
+                  <option value="large">Large scale + gaps</option>
+                  <option value="refresh-error">Refresh failure</option>
+                </select>
+              </>
+            )}
             <span>
               {receivedAt && !loading && !error
-                ? `Mock fetched ${time(receivedAt)}`
-                : "Mock adapter"}
+                ? `Fetched ${time(receivedAt)}`
+                : API_ENDPOINT
+                  ? "API adapter"
+                  : "Mock adapter"}
             </span>
           </div>
         </footer>
       </main>
       {selected && (
-        <Modal title={selected.id} onClose={() => setSelected(null)}>
+        <Modal title={selected.id} onClose={() => setSelectedId(null)}>
           <div className="detail-grid">
             {[
               [

@@ -1091,3 +1091,46 @@ dialog .primary {
   line-height: 1.5;
   color: var(--subtle);
 }
+.skeleton-table {
+  height: 320px;
+}
+.loading-state .primary-grid {
+  margin-top: 20px;
+}
+.loading-state .skeleton-chart {
+  margin-top: 0;
+}
+.chart-empty {
+  min-height: 280px;
+  justify-content: center;
+}
+.status.unknown {
+  color: var(--muted);
+}
+.stale {
+  border-top: 2px solid var(--amber);
+  padding-top: 12px;
+}
+.skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--surface) 30%,
+    #1c2942 50%,
+    var(--surface) 70%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite linear;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
