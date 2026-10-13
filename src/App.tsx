@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, FormEvent } from "react";
 import { fetchDashboard } from "./data/dashboard";
-import type { Dashboard, Period, Scenario, Session } from "./data/dashboard";
+import type { Dashboard, Scenario, Session } from "./data/dashboard";
 import { Icon } from "./components/Icon";
 import type { IconName } from "./components/Icon";
 import { ConcurrencyChart } from "./components/ConcurrencyChart";
 import { Modal } from "./components/Modal";
+import {
+  dateInZone,
+  FIXTURE_NOW,
+  PERIODS,
+  resolveDateRange,
+} from "./data/date-range";
+import type { Period } from "./data/date-range";
 import "./App.css";
 const money = (value: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
@@ -75,6 +82,12 @@ export default function App() {
   const [period, setPeriod] = useState<Period>("today");
   const [scenario, setScenario] = useState<Scenario>("normal");
   const [timezone, setTimezone] = useState("America/Chicago");
+  const [custom, setCustom] = useState({
+    startDate: "2026-10-07",
+    endDate: "2026-10-13",
+  });
+  const [editingRange, setEditingRange] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +98,7 @@ export default function App() {
   const [receivedAt, setReceivedAt] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    fetchDashboard(period, scenario, controller.signal)
+    fetchDashboard({ period, timezone, ...custom }, scenario, controller.signal)
       .then((result) => {
         setData(result);
         setLoading(false);
@@ -102,13 +115,19 @@ export default function App() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [period, scenario, revision]);
+  }, [period, timezone, custom, scenario, revision]);
   const reload = () => {
     setLoading(true);
     setError(null);
     setRevision((value) => value + 1);
   };
   const changePeriod = (value: Period) => {
+    if (value === "custom") {
+      setEditingRange(true);
+      setRangeError(null);
+      return;
+    }
+    setEditingRange(false);
     setData(null);
     setLoading(true);
     setError(null);
@@ -134,7 +153,28 @@ export default function App() {
         session.id.toLowerCase().includes(search.toLowerCase()),
     ) ?? [];
   const empty = data?.connected === 0 && data.completed === 0;
-  const rangeLabel = period === "today" ? "Today" : "Last 7 days";
+  const rangeLabel = data?.range.label ?? PERIODS[period];
+  const applyCustom = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const dates = {
+      startDate: String(form.get("startDate")),
+      endDate: String(form.get("endDate")),
+    };
+    try {
+      resolveDateRange({ period: "custom", timezone, ...dates });
+    } catch (error) {
+      setRangeError(error instanceof Error ? error.message : "Invalid range");
+      return;
+    }
+    setData(null);
+    setLoading(true);
+    setError(null);
+    setRangeError(null);
+    setCustom(dates);
+    setPeriod("custom");
+    setEditingRange(false);
+  };
   return (
     <>
       <header className="topbar">
@@ -169,18 +209,27 @@ export default function App() {
             <label className="select-wrap">
               <span className="sr-only">Reporting period</span>
               <select
-                value={period}
+                value={editingRange ? "custom" : period}
                 onChange={(event) => changePeriod(event.target.value as Period)}
               >
                 <option value="today">Today</option>
                 <option value="week">Last 7 days</option>
+                <option value="30days">Last 30 days</option>
+                <option value="90days">Last 90 days</option>
+                <option value="360days">Last 360 days</option>
+                <option value="custom">Custom range…</option>
               </select>
             </label>
             <label className="select-wrap timezone">
               <span className="sr-only">Display timezone</span>
               <select
                 value={timezone}
-                onChange={(event) => setTimezone(event.target.value)}
+                onChange={(event) => {
+                  setData(null);
+                  setLoading(true);
+                  setError(null);
+                  setTimezone(event.target.value);
+                }}
               >
                 <option value="America/Chicago">America/Chicago</option>
                 <option value="UTC">UTC</option>
@@ -196,6 +245,49 @@ export default function App() {
             </button>
           </div>
         </div>
+        {editingRange && (
+          <form className="custom-range" onSubmit={applyCustom}>
+            <label>
+              Start date
+              <input
+                type="date"
+                required
+                max={dateInZone(FIXTURE_NOW, timezone)}
+                name="startDate"
+                defaultValue={custom.startDate}
+              />
+            </label>
+            <label>
+              End date
+              <input
+                type="date"
+                required
+                max={dateInZone(FIXTURE_NOW, timezone)}
+                name="endDate"
+                defaultValue={custom.endDate}
+              />
+            </label>
+            <button className="button primary" type="submit">
+              Apply range
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => setEditingRange(false)}
+            >
+              Cancel
+            </button>
+            <p>
+              Inclusive calendar dates in {timezone}. Today ends at the sample
+              snapshot time.
+            </p>
+            {rangeError && (
+              <p role="alert" className="rose">
+                {rangeError}
+              </p>
+            )}
+          </form>
+        )}
         <div className="sample-notice">
           <span>
             <span className="dot" />
@@ -264,7 +356,7 @@ export default function App() {
                 detail={
                   empty
                     ? "No sessions in this fixture"
-                    : `${rangeLabel} · at ${time(data.peakAt)}`
+                    : `${rangeLabel} · ${new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric" }).format(new Date(data.peakAt))} ${time(data.peakAt)}`
                 }
               />
               <Metric
@@ -307,7 +399,9 @@ export default function App() {
                   <div className="legend">
                     <span>
                       <i />
-                      {period === "today" ? "Connected sessions" : "Daily peak"}
+                      {data.granularity === "intraday"
+                        ? "Connected sessions"
+                        : "Sampled peaks"}
                     </span>
                     <span>
                       <i className="dashed" />
@@ -318,10 +412,32 @@ export default function App() {
                 <ConcurrencyChart data={data} timezone={timezone} />
                 <div className="chart-footer">
                   <span>
-                    {period === "today" ? "Hourly samples" : "Daily peaks"} ·{" "}
-                    {timezone}
+                    {data.granularity === "intraday"
+                      ? "Intraday samples"
+                      : "Sampled peaks"}{" "}
+                    · {timezone}
                   </span>
-                  <span>Backend state will own this metric</span>
+                  <span>
+                    {new Intl.DateTimeFormat("en-US", {
+                      timeZone: timezone,
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    }).format(new Date(data.range.start))}{" "}
+                    →{" "}
+                    {new Intl.DateTimeFormat("en-US", {
+                      timeZone: timezone,
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    }).format(new Date(data.range.end))}
+                  </span>
                 </div>
               </Panel>
               <Panel

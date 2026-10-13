@@ -22,14 +22,21 @@ export function ConcurrencyChart({
   const label = (at: string) =>
     new Intl.DateTimeFormat(
       "en-US",
-      data.period === "today"
+      data.granularity === "intraday"
         ? {
             timeZone: timezone,
             hour: "2-digit",
             minute: "2-digit",
             hour12: false,
           }
-        : { timeZone: timezone, month: "short", day: "numeric" },
+        : {
+            timeZone: timezone,
+            month: "short",
+            day: "numeric",
+            ...(data.range.calendarDays > 300
+              ? { year: "2-digit" as const }
+              : {}),
+          },
     ).format(new Date(at));
   const selected =
     hover === null || hover >= samples.length
@@ -40,7 +47,7 @@ export function ConcurrencyChart({
       <svg
         viewBox="0 0 932 296"
         role="img"
-        aria-label={`Sample concurrency chart. Peak ${data.peak}; capacity ${data.capacity}. ${data.period === "week" ? "Daily peaks." : "Hourly samples."}`}
+        aria-label={`Sample concurrency chart. Peak ${data.peak}; capacity ${data.capacity}. ${data.granularity === "daily" ? "Sampled peaks." : "Hourly samples."}`}
       >
         <defs>
           <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
@@ -64,7 +71,7 @@ export function ConcurrencyChart({
         ))}
         {samples.map(
           (sample, i) =>
-            (i % (data.period === "today" ? 3 : 1) === 0 ||
+            (i % Math.ceil(samples.length / 7) === 0 ||
               i === samples.length - 1) && (
               <g key={sample.at}>
                 <line

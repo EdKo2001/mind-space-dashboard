@@ -1,4 +1,5 @@
-export type Period = "today" | "week";
+import { FIXTURE_NOW, resolveDateRange } from "./date-range.ts";
+import type { DateRange, RangeQuery } from "./date-range.ts";
 export type Scenario = "normal" | "empty" | "error";
 export type Session = {
   id: string;
@@ -13,7 +14,8 @@ export type Session = {
 export type Dashboard = {
   source: "mock";
   capturedAt: string;
-  period: Period;
+  range: DateRange;
+  granularity: "intraday" | "daily";
   connected: number;
   reconnecting: number;
   peak: number;
@@ -92,36 +94,39 @@ const sessions: Session[] = [
     startedAt: "2026-10-14T04:20:00Z",
   },
 ];
-const counts = [
-  22, 18, 16, 20, 24, 19, 28, 40, 54, 68, 80, 89, 110, 125, 136, 142, 159, 173,
-  184, 167, 150, 140, 132, 128,
-];
-function snapshot(period: Period, empty: boolean): Dashboard {
-  const concurrency =
-    period === "today"
-      ? counts.map((count, hour) => ({
-          at: new Date(
-            Date.UTC(2026, 9, 13, hour + 5, hour === 18 ? 40 : 0),
-          ).toISOString(),
-          count: empty ? 0 : count,
-        }))
-      : [132, 151, 163, 178, 169, 171, 184].map((count, day) => ({
-          at: new Date(Date.UTC(2026, 9, 7 + day, 23, 40)).toISOString(),
-          count: empty ? 0 : count,
-        }));
+function snapshot(query: RangeQuery, empty: boolean): Dashboard {
+  const range = resolveDateRange(query);
+  const start = Date.parse(range.start),
+    end = Date.parse(range.end);
+  const intraday = range.calendarDays === 1;
+  const sampleCount = intraday ? 24 : Math.min(range.calendarDays, 366);
+  const concurrency = Array.from({ length: sampleCount }, (_, i) => ({
+    at: new Date(start + ((end - start) * i) / (sampleCount - 1)).toISOString(),
+    count: empty
+      ? 0
+      : intraday
+        ? Math.round(20 + 164 * Math.sin((i / 23) * Math.PI) ** 2)
+        : 130 + ((i * 17) % 55),
+  }));
+  // The current fixture's final intraday sample matches the current connection snapshot.
+  if (intraday && end === Date.parse(FIXTURE_NOW) && !empty)
+    concurrency[sampleCount - 1].count = 128;
+  const peak = Math.max(...concurrency.map((sample) => sample.count));
+  const dayEquivalent = (end - start) / 86400000;
   return {
     source: "mock",
-    capturedAt: "2026-10-14T04:45:00Z",
-    period,
+    capturedAt: FIXTURE_NOW,
+    range,
+    granularity: intraday ? "intraday" : "daily",
     connected: empty ? 0 : 128,
     reconnecting: empty ? 0 : 8,
-    peak: empty ? 0 : 184,
-    peakAt: "2026-10-13T23:40:00Z",
+    peak,
+    peakAt: concurrency.find((sample) => sample.count === peak)!.at,
     voiceP95: empty ? 0 : 2.8,
     failedPercent: empty ? 0 : 1.4,
-    spend: empty ? 0 : period === "today" ? 86.4 : 604.8,
+    spend: empty ? 0 : Number((86.4 * dayEquivalent).toFixed(2)),
     capacity: 250,
-    completed: empty ? 0 : period === "today" ? 742 : 5194,
+    completed: empty ? 0 : Math.round(742 * dayEquivalent),
     avgAnswers: empty ? 0 : 24,
     avgDuration: empty ? 0 : 31,
     queueDepth: empty ? 0 : 18,
@@ -133,7 +138,7 @@ function snapshot(period: Period, empty: boolean): Dashboard {
 /** Local async fixture adapter. Replace with backend fetching when endpoints exist.
  * No HTTP requests, tracking, persistence, or real session actions. */
 export function fetchDashboard(
-  period: Period,
+  query: RangeQuery,
   scenario: Scenario,
   signal: AbortSignal,
 ): Promise<Dashboard> {
@@ -150,7 +155,13 @@ export function fetchDashboard(
       signal.removeEventListener("abort", abort);
       if (scenario === "error")
         reject(new Error("The mock request failed. No backend is connected."));
-      else resolve(snapshot(period, scenario === "empty"));
+      else {
+        try {
+          resolve(snapshot(query, scenario === "empty"));
+        } catch (error) {
+          reject(error);
+        }
+      }
     }, 650);
     signal.addEventListener("abort", abort, { once: true });
   });

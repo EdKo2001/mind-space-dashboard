@@ -14,3 +14,9 @@ Verified locally:
 Parent mobile app: npm run check and npm run export:web PASS (16 routes). Expo Doctor 20/21 retains existing expo57.0.27/router57.0.25 vs expected57.0.28/57.0.26 drift; no mobile package changes. Parent TypeScript/ESLint exclude the standalone dashboard to preserve package independence.
 
 Not verified: production deployment, actual services/data, authentication, PostHog ingestion, cross-browser matrix, native/physical devices, assistive-technology audit or 200% text matrix. No production acceptance claim.
+
+## October 13 reporting range update
+
+Added Last 30/90/360 days and Custom range. Today now resolves selected-timezone midnight → sample snapshot; presets count inclusive calendar dates. Custom form Apply/Cancel retains committed selection, rejects reversed/invalid/future dates, and uses inclusive end dates. Date-specific Chicago offsets correctly yield 23/25-hour DST days. Mock fetching and charts receive actual query boundaries; long-range ticks and endpoints include years when needed. Current-session cards remain the current snapshot independently of historical aggregates.
+
+`npm run check`, `npm test` (4 cases), and `npm run build` PASS. Browser verified all new presets, custom reversed-date error, Oct1–3 Apply, Cancel retention, Chicago Today00:00–23:45 and UTC Today00:00–04:45. Responsive custom form and updated screenshot evidence: date-range-desktop.jpg, date-range-mobile.jpg. No real fetching or analytics integration.

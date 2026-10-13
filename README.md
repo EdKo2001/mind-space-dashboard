@@ -18,7 +18,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `src/components/`: reusable chart, vector icons and accessible native dialog.
 - `src/theme.css`: shared dark theme tokens.
 
-Reporting period changes fetch another fixture. Display timezone changes formatting only. Sessions remain static; refresh does not invent activity or enforce a timer. Aggregated counts represent a fictional larger population; the table explicitly shows six illustrative rows. Missing latency/averages in the empty fixture display as unavailable, not measured zero.
+Reporting period changes fetch another fixture. The selected timezone controls both calendar boundaries and display formatting. Sessions remain static; refresh does not invent activity or enforce a timer. Aggregated counts represent a fictional larger population; the table explicitly shows six illustrative rows. Missing latency/averages in the empty fixture display as unavailable, not measured zero.
 
 ## Planned boundaries
 
@@ -29,3 +29,9 @@ PostHog: sanitized event trends, funnels, retention, feature usage and optional 
 No production provider, telemetry retention policy, commercial terms or latency target has been approved through this prototype. Alert thresholds and costs are examples.
 
 Brand mark derives from the existing MindSpace supplied app artwork; no generated dashboard logo is adopted. See `public/BRANDING.md`.
+
+## Reporting ranges
+
+Today is calendar midnight to the mock snapshot in the selected timezone, not a rolling 24-hour window. Last 7/30/90/360 days include today plus the preceding calendar dates. Changing timezone recomputes query boundaries as well as labels. Custom start/end dates are inclusive; historical end dates query up to the following midnight (exclusive), while today is capped at the snapshot. The fixture clock is fixed and visibly labeled; no live clock is implied. Long custom ranges sample at most 366 points to keep chart rendering bounded.
+
+`npm test` verifies calendar-day boundaries, DST, UTC/Chicago date rollover and invalid custom inputs. The mock adapter receives the resolved range query; a future backend should consume the same UTC start/end boundaries.
